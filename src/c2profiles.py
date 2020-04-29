@@ -13,7 +13,7 @@ class C2Profile:
     def get_profile(self):
         r = requests.get(self.url)
         if r.status_code == 200:
-            return r.content
+            return r.text
         else:
             return
 
