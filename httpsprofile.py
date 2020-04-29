@@ -5,7 +5,7 @@ import requests
 import sys
 import os
 import shlex
-from c2profiles import profiles
+from src.c2profiles import profiles
 
 
 def getargs():
