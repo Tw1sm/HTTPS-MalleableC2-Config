@@ -6,13 +6,16 @@ import sys
 import os
 import shlex
 from src.c2profiles import profiles
+from texttable import Texttable
 
 
 def getargs():
     if len(sys.argv) == 2 and sys.argv[1].lower() == 'list':
-        print('Malleable C2 Profiles')
+        t = Texttable()
+        t.add_row(['C2 Profile Name', 'Profile URL'])
         for profile in profiles:
-            print(profile.name)
+            t.add_row([profile.name, profile.url])
+        print(t.draw())
         exit()
     else:
         parser = argparse.ArgumentParser(description="Select a malleable C2 profile and add HTTPS on the fly\nShow available profiles: httpsprofile.py list", formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -24,13 +27,24 @@ def getargs():
         return args
 
 
+def gen_cert(domain):
+    proc = subprocess.run(shlex.split(f'certbot certonly --standalone -d {domain} --non-interactive --register-unsafely-without-email --agree-tos'), capture_output=True)
+    if b'not yet due for renewal' in proc.stdout:
+        print(f'[*] Certs not yet due for renewal')
+    elif b'Congratulations!' in proc.stdout:
+        print(f'[*] Certs generated')
+    else:
+        print('[!] Error generating certs')
+
+
 def main():
+    args = getargs()
+
     # check root access
     if os.getuid() != 0:
         print('[!] Sudo access required - rerun with root privs')
         exit()
 
-    args = getargs()
     cert_folder = '/etc/letsencrypt/live'
 
     # check if profile exists
@@ -39,6 +53,10 @@ def main():
     except:
         print(f'[!] {args.profile} is not an existing profile')
         exit()
+
+    # call certbot
+    if args.generate:
+        gen_cert(args.domain)
 
     # add vars for file locations
     chain = os.path.join(cert_folder, args.domain, 'fullchain.pem')
@@ -69,6 +87,9 @@ def main():
 
     # get raw profile from Github and add keystore configs
     profile_str = profile.get_profile()
+    if profile_str is None:
+        print(f'[!] Error retreiving profile from {profile.url}')
+
     profile_str += '\nhttps-certificate {'
     profile_str += f'\n    set keystore "{store}";'
     profile_str += f'\n    set password "{args.password}";'
