@@ -35,6 +35,8 @@ def gen_cert(domain):
         print(f'[*] Certs generated')
     else:
         print('[!] Error generating certs')
+        print('[!] Potential firewall issue - this script does not adjust the firewall')
+        exit()
 
 
 def main():
@@ -64,6 +66,11 @@ def main():
     p12 = os.path.join(cert_folder, args.domain, f'{args.domain}.p12')
     store = os.path.join(cert_folder, args.domain, f'{args.domain}.store')
     profile_file = os.path.join(cert_folder, args.domain, f'{profile.name}.profile')
+
+    # delete old store
+    if os.path.isfile(store):
+        os.remove(store)
+        print('[*] Deleted old Java keystore')
 
     # create the PKCS12 archive
     proc = subprocess.Popen(shlex.split(f'openssl pkcs12 -export -in {chain} -inkey {priv} -out {p12} -name {args.domain} -passout pass:{args.password}'), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
