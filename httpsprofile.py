@@ -18,11 +18,14 @@ def getargs():
         print(t.draw())
         exit()
     else:
-        parser = argparse.ArgumentParser(description="Select a malleable C2 profile and add HTTPS on the fly\nShow available profiles: httpsprofile.py list", formatter_class=argparse.RawDescriptionHelpFormatter)
-        parser.add_argument("-d", type=str, dest="domain", help="Domain to use with HTTPS certs", required=True)
-        parser.add_argument("-p", type=str, dest="profile", help="The malleable C2 profile to use", required=True)
-        parser.add_argument("--pass", type=str, dest="password", help="The Java keystore password to use", required=True)
-        parser.add_argument("-g", action="store_true", dest="generate", help="Use LetsEncrypt to generate/renew certs for the domain", required=False)
+        parser = argparse.ArgumentParser(description="Select a malleable C2 profile and add HTTPS on the fly", epilog="To show all available profiles run: httpsprofile.py list", formatter_class=argparse.RawDescriptionHelpFormatter)
+        parser.add_argument("-domain", type=str, dest="domain", help="Domain to use with HTTPS certs", required=True)
+        parser.add_argument("-profile", type=str, dest="profile", help="The malleable C2 profile to use", required=True)
+        parser.add_argument("-pass", type=str, dest="password", help="The Java keystore password to use", required=True)
+        parser.add_argument("-gen", action="store_true", dest="generate", help="Use LetsEncrypt to generate/renew certs for the domain", required=False)
+        parser.add_argument("-keystore", type=str, dest="keystore", help="Path to the pre-created Java Keystore for non-letsencrypt certs", required=False)
+        parser.add_argument("-cacert", type=str, dest="cacert", help="Path to the CA cert for non-letsencrypt certs", required=False)
+        parser.add_argument("-cert", type=str, dest="cert", help="Path to the domain cert for non-letsencrypt certs", required=False)
         args = parser.parse_args()
         return args
 
@@ -41,6 +44,15 @@ def gen_cert(domain):
 
 def main():
     args = getargs()
+    custom_certs = False
+
+    if args.keystore and args.cacert and args.cert:
+        custom_certs = True
+
+    # verify args
+    if (args.keystore or args.cacert or args.cert) and not custom_certs:
+        print('[!] If using non-letsencrypt certs, -keystore -cacert and -cert are all required args')
+        exit()
 
     # check root access
     if os.getuid() != 0:
@@ -58,44 +70,76 @@ def main():
 
     # call certbot
     if args.generate:
-        gen_cert(args.domain)
+        if custom_certs:
+            print('[!] Skipping letscencrypt cert generation (-gen not compatible with custom certs)')
+        else:
+            gen_cert(args.domain)
 
-    # add vars for file locations
-    chain = os.path.join(cert_folder, args.domain, 'fullchain.pem')
-    priv = os.path.join(cert_folder, args.domain, 'privkey.pem')
-    p12 = os.path.join(cert_folder, args.domain, f'{args.domain}.p12')
-    store = os.path.join(cert_folder, args.domain, f'{args.domain}.store')
-    profile_file = os.path.join(cert_folder, args.domain, f'{profile.name}.profile')
+    # add custom certs to keystore
+    if custom_certs:
+        store = args.keystore
+        profile_file = os.path.join(os.path.dirname(store), f'{profile.name}.profile')
 
-    # delete old store
-    if os.path.isfile(store):
-        os.remove(store)
-        print('[*] Deleted old Java keystore')
+        # import the ca cert
+        proc = subprocess.Popen(shlex.split(f'keytool -import -trustcacerts -alias cacert -file {args.cacert} -keystore {store} -storepass {args.password}'), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        proc.wait()
 
-    # create the PKCS12 archive
-    proc = subprocess.Popen(shlex.split(f'openssl pkcs12 -export -in {chain} -inkey {priv} -out {p12} -name {args.domain} -passout pass:{args.password}'), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    proc.wait()
+        if proc.returncode == 0:
+            print('[*] Imported the CA cert into the keystore')
+        else:
+            print('[!] Error importing the CA cert into the keystore')
+            exit()
 
-    if proc.returncode == 0:
-        print('[*] Created PKCS 12 cert')
+        # import the domain cert cert
+        proc = subprocess.Popen(shlex.split(f'keytool -import -trustcacerts -alias mykey -file {args.cert} -keystore {store} -storepass {args.password}'), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        proc.wait()
+
+        if proc.returncode == 0:
+            print('[*] Imported the domain cert into the keystore')
+        else:
+            print('[!] Error importing the domain cert into the keystore')
+            exit()
+
     else:
-        print('[!] Error creating PKCS 12 cert. Does the domain/cert folder exist?')
-        exit()
+    # make a new keystore with letsencrypt certs
 
-    # create the Java keystore
-    proc = subprocess.Popen(shlex.split(f'keytool -importkeystore -deststorepass {args.password} -destkeystore {store} -srckeystore {p12} -srcstoretype PKCS12 -srcstorepass {args.password} -alias {args.domain}'), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    proc.wait()
+        # add vars for file locations
+        chain = os.path.join(cert_folder, args.domain, 'fullchain.pem')
+        priv = os.path.join(cert_folder, args.domain, 'privkey.pem')
+        p12 = os.path.join(cert_folder, args.domain, f'{args.domain}.p12')
+        store = os.path.join(cert_folder, args.domain, f'{args.domain}.store')
+        profile_file = os.path.join(cert_folder, args.domain, f'{profile.name}.profile')
 
-    if proc.returncode == 0:
-        print('[*] Created Java keystore')
-    else:
-        print('[!] Error creating Java keystore')
-        exit()
+        # delete old store
+        if os.path.isfile(store):
+            os.remove(store)
+            print('[*] Deleted old Java keystore')
+
+        # create the PKCS12 archive
+        proc = subprocess.Popen(shlex.split(f'openssl pkcs12 -export -in {chain} -inkey {priv} -out {p12} -name {args.domain} -passout pass:{args.password}'), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        proc.wait()
+
+        if proc.returncode == 0:
+            print('[*] Created PKCS 12 cert')
+        else:
+            print('[!] Error creating PKCS 12 cert. Does the domain/cert folder exist?')
+            exit()
+
+        # create the Java keystore
+        proc = subprocess.Popen(shlex.split(f'keytool -importkeystore -deststorepass {args.password} -destkeystore {store} -srckeystore {p12} -srcstoretype PKCS12 -srcstorepass {args.password} -alias {args.domain}'), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        proc.wait()
+
+        if proc.returncode == 0:
+            print('[*] Created Java keystore')
+        else:
+            print('[!] Error creating Java keystore')
+            exit()
 
     # get raw profile from Github and add keystore configs
     profile_str = profile.get_profile()
     if profile_str is None:
         print(f'[!] Error retreiving profile from {profile.url}')
+        exit()
 
     profile_str += '\nhttps-certificate {'
     profile_str += f'\n    set keystore "{store}";'
