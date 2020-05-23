@@ -35,13 +35,21 @@ To show all available profiles run: httpsprofile.py list
 
 ## Examples ##
 List the available C2 profiles to choose from:
-```sudo ./httpsprofile.py list```
+```
+sudo ./httpsprofile.py list
+```
 
 Create a profile with pre-existing letsencrypt certs:
-```sudo ./httpsprofile.py -domain seetwo.com -profile amazon -pass Password123```
+```
+sudo ./httpsprofile.py -domain seetwo.com -profile amazon -pass Password123
+```
 
 Create a profile and generate/renew letsencrypt certs:
-```sudo ./httpsprofile.py -domain seetwo.com -profile amazon -pass Password123 -gen```
+```
+sudo ./httpsprofile.py -domain seetwo.com -profile amazon -pass Password123 -gen
+```
 
 Create a profile with non-letsencrypt certs: __*(Not fully tested)*__
-```sudo ./httpsprofile.py -domain seetwo.com -profile amazon -pass ExistingPass123 -keystore existing.store -cacert gd_bundle-g2-g1 -cert 47ac05a411ccc8c9.crt```
+```
+sudo ./httpsprofile.py -domain seetwo.com -profile amazon -pass ExistingPass123 -keystore existing.store -cacert gd_bundle-g2-g1 -cert 47ac05a411ccc8c9.crt
+```
